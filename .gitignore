@@ -2,6 +2,8 @@ __pycache__/
 .vscode/
 falkordb_data/
 gdelt_raw/
+my_project*/
+mypackage*/
 
 
 

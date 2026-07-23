@@ -5,19 +5,19 @@ import pandas as pd
 from tqdm import tqdm
 
 
-def check_mentions_exist(news_url:str, event_id:str, graph:graph=native_graph)-> bool:
+def check_mentions_exist(event_id:str, graph:graph=native_graph)-> bool:
   query = """ 
     MATCH (n:NewsArticle)-[r:MENTIONS]->(e:Event)
-    WHERE n.url=$url AND e.externalid=$externalid
-    RETURN  COUNT(r) > 0 as relationexist
+    WHERE e.externalid=$externalid
+    RETURN r
   	"""
   params = {
-      "url":news_url,
       "externalid": event_id
 		}
   
   response = graph.query(query, params=params)
-  return response.result_set[0][0]
+  return response.result_set
+
 
 
 def create_mentions_pair(data:pd.DataFrame):
@@ -27,14 +27,20 @@ def create_mentions_pair(data:pd.DataFrame):
     return event_link_pairs
 
 def add_mentions_props(params:dict, graph:graph=native_graph):
-    query = """MATCH (e:Event {externalid:$GlobalEventID}), (n:NewsArticle {url:$MentionIdentifier})
-    MERGE (e)<-[r:MENTIONS]-(n)
-    SET
-		r.sentence_id=$SentenceID,
-        r.mention_type=$MentionType,
-        r.inraw_text=$InRawText,
-        r.confidence=$Confidence,
-        r.doc_len=$MentionDocLen
+    query = """UNWIND $rows AS row
+	MATCH (e:Event       {externalid: row.GlobalEventID})
+	MATCH (n:NewsArticle {url: row.MentionIdentifier})
+	MERGE (e)<-[r:MENTIONS]-(n)
+	ON CREATE SET
+    	r.mention_type = row.MentionType,
+    	r.confidence   = row.Confidence,
+    	r.doc_len      = row.MentionDocLen,
+    	r.sentence_id  = row.SentenceID
+	ON MATCH SET
+    	r.mention_type = row.MentionType,
+    	r.confidence   = row.Confidence,
+    	r.doc_len      = row.MentionDocLen,
+    	r.sentence_id  = row.SentenceID
     """
     response = graph.query(query, params=params)
     return response
@@ -49,23 +55,25 @@ def add_mentions_properties(dir_path):
 		event_link_pairs = create_mentions_pair(data)
 		for link in event_link_pairs:
 			for event in event_link_pairs[link]:
-				if check_mentions_exist(link, event):
-					total_mentions_instances += 1
-					link_check = data["MentionIdentifier"] == link
-					event_check = data["GlobalEventID"] == int(event)
-					row = data[link_check & event_check].sort_values(by="Confidence", ascending=False)\
-						.drop(columns=["MentionDocTranslationInfo", "Extras"]).iloc[0, :]
-					params = {
-						"GlobalEventID": str(row["GlobalEventID"]),
-						"MentionIdentifier":str(row["MentionIdentifier"]),
-						"MentionType":row["MentionType"],
-						"InRawText":row["InRawText"],
-						"MentionDocLen":row["MentionDocLen"],
-						"SentenceID":row["SentenceID"],
-						"Confidence":row["Confidence"]
-					}
-					response = add_mentions_props(params)
-					if response.properties_set == "5.0":
+				total_mentions_instances += 1
+				link_check = data["MentionIdentifier"] == link
+				event_check = data["GlobalEventID"] == int(event)
+				events_data = data[link_check & event_check].sort_values(by="Confidence", ascending=False)\
+					.drop(columns=["MentionDocTranslationInfo", "Extras"])
+
+				rows = []
+				for _, row in events_data.iterrows():
+					rows.append({
+        					"GlobalEventID"    : str(row["GlobalEventID"]),
+        					"MentionIdentifier": str(row["MentionIdentifier"]),
+        					"MentionType"      : row["MentionType"],
+        					"Confidence"       : row["Confidence"],
+        					"MentionDocLen"    : row["MentionDocLen"],
+        					"SentenceID"       : row["SentenceID"],
+    				})
+					
+				response = add_mentions_props({"rows": rows})
+				if int(response.properties_set) > 1:
 						mention_properties_added += 1
 				else:
 					continue
@@ -74,5 +82,5 @@ def add_mentions_properties(dir_path):
 	
 
 if __name__ == "__main__":
-    dir_path = "../gdelt_raw/mentions/2026"
+    dir_path = "./gdelt_raw/mentions/2026"
     add_mentions_properties(dir_path)

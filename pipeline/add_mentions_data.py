@@ -35,12 +35,14 @@ def add_mentions_props(params:dict, graph:graph=native_graph):
     	r.mention_type = row.MentionType,
     	r.confidence   = row.Confidence,
     	r.doc_len      = row.MentionDocLen,
-    	r.sentence_id  = row.SentenceID
+    	r.sentence_id  = row.SentenceID,
+		r.inraw_text   = row.inraw_text
 	ON MATCH SET
     	r.mention_type = row.MentionType,
     	r.confidence   = row.Confidence,
     	r.doc_len      = row.MentionDocLen,
-    	r.sentence_id  = row.SentenceID
+    	r.sentence_id  = row.SentenceID,
+		r.inraw_text   = row.inraw_text
     """
     response = graph.query(query, params=params)
     return response
@@ -70,6 +72,7 @@ def add_mentions_properties(dir_path):
         					"Confidence"       : row["Confidence"],
         					"MentionDocLen"    : row["MentionDocLen"],
         					"SentenceID"       : row["SentenceID"],
+							"inraw_text"	   : row["InRawText"]
     				})
 					
 				response = add_mentions_props({"rows": rows})

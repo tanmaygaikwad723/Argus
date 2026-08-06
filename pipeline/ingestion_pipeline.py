@@ -6,10 +6,8 @@ import os
 from pathlib import Path
 from urllib.parse import urlparse
 from tqdm.notebook import tqdm
+from db.connection import graph
 
-db = FalkorDB(host="localhost", port=6379)
-graph = db.select_graph("Geopolitics")
-graph.schema
 
 EVENT_COLUMNS = [
     'GlobalEventID', 'Day', 'MonthYear', 'Year', 'FractionDate',
@@ -94,7 +92,7 @@ def event_ingestion_pipeline(data:pd.DataFrame):
     filtered_data = data[num_sources_filter]
     event_significance_filter = (filtered_data["GoldsteinScale"] <= -7.0) | (filtered_data["GoldsteinScale"] >= 7.0)
     goldstein_filtered_data = filtered_data[event_significance_filter]
-    critical_roots = ['15', '14', '17', '18', '19', '20']
+    critical_roots = ['15', '14', '16', '17', '18', '19', '20']
     category_filter = (goldstein_filtered_data['QuadClass'] == 4) | (goldstein_filtered_data['EventRootCode'].astype(str).isin(critical_roots))
     category_filtered_events = goldstein_filtered_data[category_filter]
     if len(filtered_data) == 0:
@@ -226,7 +224,7 @@ def events_data_ingestion_pipeline(dir_path:str):
     directory = Path(dir_path)
 
     total_rows_processed = 0
-    files = list(directory.iterdir())
+    files = list(file for file in directory.iterdir() if file.is_file())
 
     for file in tqdm(files, desc="Processing CSV files", leave=True, dynamic_ncols=True):
         try:
@@ -241,5 +239,7 @@ def events_data_ingestion_pipeline(dir_path:str):
     print(f"Total number of events processed is : {total_rows_processed}")
 
 
-    if __name__ == "__main__":
-        events_data_ingestion_pipeline("/home/tanmaygaikwad/ML/Geopolitcs-Knowledge-Graph/gdelt_raw/events/2026")
+if __name__ == "__main__":
+        BASE_DIR = Path(__file__).resolve().parent.parent
+        events_dir = BASE_DIR / "gdelt_raw" / "events" / "2026"
+        events_data_ingestion_pipeline(events_dir)

@@ -42,10 +42,14 @@ redis==8.0.1
 requests==2.34.2
 six 
 stack_data 
-tornado 
+torch
+tornado
+transformers
 tqdm==4.68.3
-traitlets 
+traitlets
+trafilatura
 typing_extensions 
 urllib3==2.7.0
+waybackpy
 wcwidth 
 widgetsnbextension==4.0.15

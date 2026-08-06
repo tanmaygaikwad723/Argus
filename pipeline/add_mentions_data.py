@@ -51,7 +51,7 @@ def add_mentions_props(params:dict, graph:graph=native_graph):
 def add_mentions_properties(dir_path):
 	total_mentions_instances = 0
 	mention_properties_added = 0
-	files = list(Path(dir_path).iterdir())
+	files = list(file for file in Path(dir_path).iterdir() if file.is_file())
 	for file in tqdm(files, leave=True, dynamic_ncols=True):
 		data = pd.read_csv(file, on_bad_lines="skip", encoding="utf-8")
 		event_link_pairs = create_mentions_pair(data)
@@ -85,5 +85,6 @@ def add_mentions_properties(dir_path):
 	
 
 if __name__ == "__main__":
-    dir_path = "./gdelt_raw/mentions/2026"
-    add_mentions_properties(dir_path)
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    mentions_path = BASE_DIR / "gdelt_raw" / "mentions" / "2026"
+    add_mentions_properties(mentions_path)

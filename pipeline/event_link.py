@@ -13,9 +13,7 @@ from tqdm.notebook import tqdm
 from falkordb.query_result import QueryResult
 from typing import List, Dict
 import os
-
-db = FalkorDB(host="localhost", port=6379)
-graph = db.select_graph("Geopolitics")
+from db.connection import graph
 
 def print_node_details(response_obj:QueryResult):
     for row in response_obj.result_set:
@@ -161,12 +159,10 @@ def link_events(graph:Graph, article_mentioned_events:dict):
     return created_relations, total_possible_relations
 
 
-mentions_path = Path("gdelt_raw/mentions/2026")
-
 def create_relations_from_file(graph:Graph, dir_path:Path):
     total_possible_relations = 0
     created_relations = 0
-    files = list(dir_path.iterdir())
+    files = list(file for file in Path(dir_path).iterdir() if file.is_file())
     for file in tqdm(files, leave=True, dynamic_ncols=True):
         data = pd.read_csv(file, encoding="utf-8", on_bad_lines="skip")
         event_link_pairs = {}
@@ -179,6 +175,9 @@ def create_relations_from_file(graph:Graph, dir_path:Path):
 
     print(f"The total possible relations that could have been created were : {total_possible_relations}.\n\
           But the actual total number of relations created are : {created_relations}")
-    
 
-create_relations_from_file(graph, mentions_path)
+    
+if __name__ == "__main__":
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    mentions_path = BASE_DIR / "gdelt_raw" / "mentions" / "2026"
+    create_relations_from_file(graph, mentions_path)

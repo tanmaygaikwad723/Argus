@@ -1,27 +1,5 @@
 #!/usr/bin/env python3
-"""
-GDELT v2 Downloader — Events + Mentions
-Downloads 4 evenly-spaced 15-min snapshots per day for a given date range.
 
-What gets downloaded:
-  events/   → .export.CSV.zip  — core event records (actors, locations, CAMEO codes)
-  mentions/ → .mentions.CSV.zip — every article that mentioned each event
-
-Why both?
-  The Mentions table is the implicit ground truth for event link prediction.
-  Two events co-mentioned in the same article = linked pair (positive sample).
-
-Estimated disk usage for June 2024 – June 2026 with conflict filter:
-  events   ~1–2 GB
-  mentions ~2–4 GB  (mentions files are larger than events files)
-  total    ~3–6 GB
-
-Usage:
-    pip install requests pandas
-    python download_gdelt.py
-even
-Resume safe: already-downloaded files are skipped automatically.
-"""
 
 import io
 import sys
@@ -33,8 +11,8 @@ import pandas as pd
 import requests
 
 # ── CONFIG ─────────────────────────────────────────────────────────────────────
-START_DATE = "20260101"   # YYYYMMDD
-END_DATE   = "20260630"   # YYYYMMDD
+START_DATE = "20260701"   # YYYYMMDD
+END_DATE   = "20260805"   # YYYYMMDD
 
 DATA_DIR   = Path("gdelt_raw")
 
@@ -55,7 +33,6 @@ MASTER_URL = "http://data.gdeltproject.org/gdeltv2/masterfilelist.txt"
 
 # ── COLUMN DEFINITIONS ─────────────────────────────────────────────────────────
 
-# GDELT v2 events: 61 columns, tab-separated, NO header
 EVENT_COLS = [
     "GlobalEventID", "Day", "MonthYear", "Year", "FractionDate",
     "Actor1Code", "Actor1Name", "Actor1CountryCode", "Actor1KnownGroupCode",
@@ -79,16 +56,14 @@ EVENT_COLS = [
     "DATEADDED", "SOURCEURL",
 ]
 
-# GDELT v2 mentions: 14 columns, tab-separated, NO header
-# The local CSVs are written with a header row that matches the field order
-# observed in the raw mentions rows.
+
 MENTION_COLS = [
     "GlobalEventID",
-    "EventTimeDate",             # ADDED THIS
-    "MentionTimeDate",           # ADDED THIS
-    "MentionType",
+    "EventTimeDate",              # when the event occurred (YYYYMMDDHHMMSS)
+    "MentionTimeDate",            # when the article was published (YYYYMMDDHHMMSS)
+    "MentionType",                # 1=WEB 2=CITATIONONLY 3=CORE 4=DOCCAS
     "MentionSourceName",
-    "MentionIdentifier",
+    "MentionIdentifier",          # article URL
     "SentenceID",
     "Actor1CharOffset",
     "Actor2CharOffset",
@@ -97,9 +72,11 @@ MENTION_COLS = [
     "Confidence",
     "MentionDocLen",
     "MentionDocTone",
-    "MentionDocTranslationInfo", # ADDED THIS (matches official schema)
-    "Extras"                     # RENAMED to match official schema
+    "MentionDocTranslationInfo",
+    "Extras",                     # single field, usually empty, reserved
 ]
+
+
 # ── HELPERS ────────────────────────────────────────────────────────────────────
 
 def fetch_master_list() -> list[str]:

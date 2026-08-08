@@ -9,6 +9,7 @@ class Event:
     num_mentions: int
     goldsteinscale: float
     isrootevent: int
+    summary: str
 
 
 @dataclass

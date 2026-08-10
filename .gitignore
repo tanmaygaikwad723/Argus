@@ -1,10 +1,11 @@
 __pycache__/
 .vscode/
+.env
 falkordb_data/
 gdelt_raw/
 my_project*/
 mypackage*/
-*test*
+*test.ipynb
 
 
 

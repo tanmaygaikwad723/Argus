@@ -15,7 +15,7 @@ def query_by_actor(actor_name:str, graph:Graph=native_graph):
     WHERE toLower(a.name) CONTAINS $name AND e.summary IS NOT NULL
     OPTIONAL MATCH (e)<-[r2:MENTIONS]-(n:NewsArticle)
     OPTIONAL MATCH (n)<-[r3:PUBLISHED]-(p:Publisher)
-    RETURN [a, r, e, r2, n, r3, p] AS row
+    RETURN [a, r, e, r2, n, r3, p] AS row LIMIT 10
 	"""
     return graph.query(query, params=params)
 
@@ -47,7 +47,7 @@ def query_by_actor_and_eventword(actor_names:List[str], event_words:List[str], g
 			AND ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)
 			OPTIONAL MATCH (e)<-[r2:MENTIONS]-(n:NewsArticle)
 			OPTIONAL MATCH (n)<-[r3:PUBLISHED]-(p:Publisher)
-			RETURN [a, r, e, r2, n, r3, p] AS row
+			RETURN [a, r, e, r2, n, r3, p] AS row LIMIT 10
 		"""
     return graph.query(query, params=params)
 

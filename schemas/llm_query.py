@@ -6,5 +6,5 @@ class QueryByActor(BaseModel):
 
 
 class QueryByActorNameandWords(BaseModel):
-    actors: List[str] = Field(description="The name of actors who participated in the event. It can be a country, an individual  or an organization")
+    actor_names: List[str] = Field(description="The name of actors who participated in the event. It can be a country, an individual  or an organization")
     words: List[str] = Field(description="The words or specific phrases that are related to the event.")

@@ -8,7 +8,7 @@ from falkordb.query_result import QueryResult
 
 def query_by_actor(actor_name:str, graph:Graph=native_graph):
     params = {
-        "name":actor_name
+        "name":actor_name.lower()
     }
     query = """
 	MATCH (a:Actor)-[r:PARTICIPATED_IN]->(e:Event)
@@ -37,8 +37,8 @@ def store_event_article_pairs(response:QueryResult):
 
 def query_by_actor_and_eventword(actor_names:List[str], event_words:List[str], graph:Graph=native_graph):
     params = {
-        "actors":actor_names,
-        "words":event_words
+        "actors":[names.lower() for names in actor_names],
+        "words":[words.lower() for words in event_words]
 	}
     query = """ 
 		MATCH (a:Actor)-[r:PARTICIPATED_IN]->(e:Event)

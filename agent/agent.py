@@ -1,7 +1,7 @@
 from langchain_groq import ChatGroq
 from langchain.agents import create_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from agent.agent_tools import QueryByActorAndWordsTool, QueryByActorTool
+from agent.agent_tools import QueryByActorAndWordsTool, QueryByActorTool, QueryByLocationandWordsTool
 from langgraph.checkpoint.memory import InMemorySaver
 import os
 from dotenv import load_dotenv
@@ -9,16 +9,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-llm = ChatGroq(model="qwen/qwen3.6-27b",
-                temperature=0.9,
+llm = ChatGroq(model="openai/gpt-oss-120b",
                 api_key=os.getenv("GROQ_API_KEY2"))
-tools = [QueryByActorTool(), QueryByActorAndWordsTool()]
+tools = [QueryByActorTool(), QueryByActorAndWordsTool(), QueryByLocationandWordsTool()]
 
 
 prompt = "You are a helpful geopolitical analysis assistant that finds information about geopolitical events. \
-         Analyze the question asked by user, then extract the input words that are required to run tools based on the question. \
-         If tools require for follow up question, make sure to ask for follow up question, Make sure to include any \
-         available options that need to be clarified in the follow up questions. Do only the things user specifically \
+         Analyze the question asked by user, then extract appropriate words and entities that can be used by tools provided. \
+         If you need clarity on anything then ask user, Do only the things user specifically \
          requested. If a tool outputs multiple options, ask user to select one or more of them in follow up question."
             
 agent = create_agent(model=llm, tools=tools, system_prompt=prompt, checkpointer=InMemorySaver())

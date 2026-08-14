@@ -35,7 +35,7 @@ def with_date_filter(func: Callable) -> Callable:
         parts = func(*args, **kwargs)
 
         if occured_after and occured_before:
-            if occured_after <= occured_before:
+            if occured_after >=  occured_before:
                 raise ValueError("occured after date must be less than occured before date")
             parts.where.append("e.date > date($occured_after) AND e.date < date($occured_before)")
             parts.params["occured_after"] = occured_after.isoformat()
@@ -69,45 +69,59 @@ def query_by_actor(actor_name: str, graph:Graph=native_graph) -> QueryParts:
         return_clause= """ 
         OPTIONAL MATCH (e)<-[r2:MENTIONS]-(n:NewsArticle)
         OPTIONAL MATCH (n)<-[r3:PUBLISHED]-(p:Publisher)
-        RETURN [a, r, e, r2, n, r3, p] AS row LIMIT 10
-        """,
+        RETURN flex.json.toJson({event: CASE WHEN e IS NOT NULL THEN properties(e) ELSE {} END,
+            participated_rel: CASE WHEN r IS NOT NULL THEN properties(r) ELSE {} END,
+            actor: CASE WHEN a IS NOT NULL THEN properties(a) ELSE {} END,
+            mentions_rel: CASE WHEN r2 IS NOT NULL THEN properties(r2) ELSE {} END,
+            article: CASE WHEN n IS NOT NULL THEN properties(n) ELSE {} END,
+            published_rel: CASE WHEN r3 IS NOT NULL THEN properties(r3) ELSE {} END,
+            publisher: CASE WHEN p IS NOT NULL THEN properties(p) ELSE {} END}) AS graph_context LIMIT 10
+            """,
         params= {"name": actor_name.lower()}
     )
 
 
-def store_event_article_pairs(response:QueryResult):
-    return_list = []
-    if len(response.result_set) > 1:
-        for i in range(len(response.result_set)):
-            for row in response.result_set[i]:
-                actor, participation, event, mentions, article,  publish, publisher = row
-                actor_obj = Actor(name=actor.properties["name"], country_code=actor.properties["country_code"], type=actor.properties["type"])
-                event_obj = Event(external_id=event.properties["externalid"], date=event.properties["date"], quad_class=event.properties["quad_class"],\
-                                num_mentions=event.properties["num_mentions"], isrootevent=event.properties["isrootevent"],\
-                                goldsteinscale=event.properties["goldsteinscale"], summary=event.properties["summary"])
-                publisher_obj = Publisher(name=publisher.properties["name"])
-                article_obj = NewsArticle(url=article.properties["url"])
-                return_list.append({'actor':actor_obj, 'event':event_obj, 'newsarticle':article_obj, 'publisher':publisher_obj})
-    else: 
-        return []
-    return return_list
-
-
+@with_date_filter
 def query_by_actor_and_eventword(actor_names:List[str], event_words:List[str], graph:Graph=native_graph):
-    params = {
-        "actors":[names.lower() for names in actor_names],
-        "words":[words.lower() for words in event_words]
-	}
-    query = """ 
-		MATCH (a:Actor)-[r:PARTICIPATED_IN]->(e:Event)
-			WHERE ANY(name IN $actors WHERE toLower(a.name) CONTAINS name) 
-			AND e.summary IS NOT NULL 
-			AND ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)
-			OPTIONAL MATCH (e)<-[r2:MENTIONS]-(n:NewsArticle)
-			OPTIONAL MATCH (n)<-[r3:PUBLISHED]-(p:Publisher)
-			RETURN [a, r, e, r2, n, r3, p] AS row LIMIT 10
-		"""
-    return graph.query(query, params=params)
+    return QueryParts(
+        match = "MATCH (a:Actor)-[r:PARTICIPATED_IN]->(e:Event)",
+        where = ["ANY(name in $actors WHERE toLower(a.name) CONTAINS name)", "e.summary IS NOT NULL", "ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)"],
+        return_clause = """ 
+        OPTIONAL MATCH (e)<-[r2:MENTIONS]-(n:NewsArticle)
+        OPTIONAL MATCH (n)<-[r3:PUBLISHED]-(p:Publisher)
+        RETURN flex.json.toJson({event: CASE WHEN e IS NOT NULL THEN properties(e) ELSE {} END,
+        participated_rel: CASE WHEN r IS NOT NULL THEN properties(r) ELSE {} END,
+        actor: CASE WHEN a IS NOT NULL THEN properties(a) ELSE {} END,
+        mentions_rel: CASE WHEN r2 IS NOT NULL THEN properties(r2) ELSE {} END,
+        article: CASE WHEN n IS NOT NULL THEN properties(n) ELSE {} END,
+        published_rel: CASE WHEN r3 IS NOT NULL THEN properties(r3) ELSE {} END,
+        publisher: CASE WHEN p IS NOT NULL THEN properties(p) ELSE {} END}) AS graph_context LIMIT 10
+        """,
+        params={"actors": [names.lower() for names in actor_names], "words": [words.lower() for words in event_words]}
+    )
+
+
+@with_date_filter
+def query_by_event_and_location(event_words:List[str], location:str, graph:Graph=native_graph):
+    return QueryParts(
+        match = "MATCH (e:Event)-[r:OCCURED_AT]->(l:Location)",
+        where = ["ANY(word IN $words WHERE toLower(e.summary) CONTAINS word)", "e.summary IS NOT NULL", "toLower(l.name) CONTAINS $location"],
+        return_clause = """ 
+        OPTIONAL MATCH (e)<-[r2:MENTIONS]-(n:NewsArticle)
+        OPTIONAL MATCH (n)<-[r3:PUBLISHED]-(p:Publisher)
+        OPTIONAL MATCH (e)<-[r4:PARTICIPATED_IN]-(a:Actor)
+        RETURN flex.json.toJson({event: CASE WHEN e IS NOT NULL THEN properties(e) ELSE {} END,
+        occured_at_rel: CASE WHEN r IS NOT NULL THEN properties(r) ELSE {} END,
+        location: CASE WHEN l IS NOT NULL THEN properties(l) ELSE {} END,
+        mentions_rel: CASE WHEN r2 IS NOT NULL THEN properties(r2) ELSE {} END,
+        article: CASE WHEN n IS NOT NULL THEN properties(n) ELSE {} END,
+        published_rel: CASE WHEN r3 IS NOT NULL THEN properties(r3) ELSE {} END,
+        publisher: CASE WHEN p IS NOT NULL THEN properties(p) ELSE {} END,
+        participated_rel: CASE WHEN r4 IS NOT NULL THEN properties(r4) ELSE {} END,
+        actor: CASE WHEN a IS NOT NULL THEN properties(a) ELSE {} END}) AS graph_context LIMIT 10
+        """,
+        params = {"words":[w.lower() for w in event_words], "location": location.lower()}
+    )
 
 
 

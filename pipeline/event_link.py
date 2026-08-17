@@ -16,6 +16,7 @@ import os
 from db.connection import graph
 
 def print_node_details(response_obj:QueryResult):
+    """Prints details of nodes, edges that are present in the response of a query"""
     for row in response_obj.result_set:
         for node in row:
             if isinstance(node, Node):
@@ -26,6 +27,7 @@ def print_node_details(response_obj:QueryResult):
 
 
 def query_events(graph:Graph, ext_list:List[str])->List[Event]:
+    """Returns a list of 'Event' objects whose externalid is present in ext_list."""
     query = """ 
     MATCH (e:Event)
     WHERE e.externalid IN $ext_list
@@ -62,6 +64,9 @@ def query_events(graph:Graph, ext_list:List[str])->List[Event]:
 
 
 def query_actors(graph:Graph, event_list:List[Event]) -> List[List[Actor]]:
+    """
+    Returns a list of actors that have participated in the event which are given in the event_list.
+    """
     if not event_list:
         return []
     ext_list = [e.external_id for e in event_list]
@@ -98,6 +103,9 @@ def query_actors(graph:Graph, event_list:List[Event]) -> List[List[Actor]]:
 
 
 def match_actors(actors_dict:dict):
+    """ 
+    Checks if two events have same set of actors.
+    """
     actors_name_list = []
     for event in actors_dict:
         actors_name_list.append([a.name for a in actors_dict[event]])
@@ -105,6 +113,9 @@ def match_actors(actors_dict:dict):
 
 
 def match_actor_type(actors_dict:dict):
+    """
+    Checks if two events have same type of actors involved.
+    """
     actor_type_list = []
     for event in actors_dict:
         actor_type_list.append([a.type for a in actors_dict[event]])
@@ -112,6 +123,9 @@ def match_actor_type(actors_dict:dict):
 
 
 def match_swap_actors(actors_dict:dict):
+    """
+    Checks if two have same set of actors.
+    """
     actor_list = []
     for event in actors_dict:
         actor_list.append([a.name for a in actors_dict[event]])
@@ -119,6 +133,9 @@ def match_swap_actors(actors_dict:dict):
 
 
 def link_events(graph:Graph, article_mentioned_events:dict):
+    """
+    Links two events on the basis of heuristics and adds 'RELATED_TO' relation between those events.
+    """
     created_relations = 0
     total_possible_relations = 0
     for article in article_mentioned_events:
@@ -160,6 +177,9 @@ def link_events(graph:Graph, article_mentioned_events:dict):
 
 
 def create_relations_from_file(graph:Graph, dir_path:Path):
+    """
+    Iterates over a list of files, checks if two events can be linked and links event using the 'link_events' method
+    """
     total_possible_relations = 0
     created_relations = 0
     files = list(file for file in Path(dir_path).iterdir() if file.is_file())

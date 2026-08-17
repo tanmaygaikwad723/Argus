@@ -1,8 +1,7 @@
 import pandas as pd
 import numpy as np
 from falkordb import FalkorDB
-import time
-import os
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlparse
 from tqdm.notebook import tqdm
@@ -21,6 +20,10 @@ EVENT_COLUMNS = [
 ]
 
 def classify_actor(actor_code: str, actor_type1: str) -> str:
+    """
+    Classifies the actor into one of the following categories based on its code, and type1 property
+    [Nation, Individual, Goverment, Military, Rebel groups, political party, Organization, Civilian]
+    """
     iso3166_alpha3 = [
     "ABW", "AFG", "AGO", "AIA", "ALA", "ALB", "AND", "ARE", "ARG", "ARM",
     "ASM", "ATA", "ATF", "ATG", "AUS", "AUT", "AZE", "BDI", "BEL", "BEN",
@@ -88,6 +91,9 @@ def classify_actor(actor_code: str, actor_type1: str) -> str:
 
 
 def event_ingestion_pipeline(data:pd.DataFrame):
+    """ 
+    Filter geopolitically significant events and add their data to the graph
+    """
     num_sources_filter = data["NumArticles"] >= 4
     filtered_data = data[num_sources_filter]
     event_significance_filter = (filtered_data["GoldsteinScale"] <= -7.0) | (filtered_data["GoldsteinScale"] >= 7.0)
@@ -107,7 +113,7 @@ def event_ingestion_pipeline(data:pd.DataFrame):
             continue
 
         ext_id = str(int(row["GlobalEventID"]))
-        evt_date = int(row["Day"])
+        evt_date = str(row["Day"])
         evt_year = int(row["Year"])
         news_url = str(row["SOURCEURL"])
         evt_num_mentions = int(row["NumMentions"])
@@ -121,7 +127,7 @@ def event_ingestion_pipeline(data:pd.DataFrame):
             publisher = "Unknown Publisher"
 
         query = """
-        MERGE (e:Event {externalid: $ext_id, date: $date})
+        MERGE (e:Event {externalid: $ext_id, date: date($date)})
         SET e.quad_class = $quad_class, e.num_mentions = $evt_num_mentions, e.goldsteinscale = $goldsteinscale, e.isrootevent = $isroot
 
         MERGE (y:Year {value: $evt_year})
@@ -221,6 +227,9 @@ def event_ingestion_pipeline(data:pd.DataFrame):
 
 
 def events_data_ingestion_pipeline(dir_path:str):
+    """ 
+    Iterate over all the events files and their data to the graph database
+    """
     directory = Path(dir_path)
 
     total_rows_processed = 0

@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 
 def check_mentions_exist(event_id:str, graph:graph=native_graph)-> bool:
+  """Check if mentions relation exist for event with event_id"""
   query = """ 
     MATCH (n:NewsArticle)-[r:MENTIONS]->(e:Event)
     WHERE e.externalid=$externalid
@@ -21,34 +22,42 @@ def check_mentions_exist(event_id:str, graph:graph=native_graph)-> bool:
 
 
 def create_mentions_pair(data:pd.DataFrame):
-    event_link_pairs = {}
-    for link in data["MentionIdentifier"].unique():
-      event_link_pairs[link] = set(str(eid) for eid in data[data["MentionIdentifier"] == link]["GlobalEventID"])
-    return event_link_pairs
+	"""Create a dict of events and the newsarticle that mentions that event."""
+	event_link_pairs = {}
+	for link in data["MentionIdentifier"].unique():
+		event_link_pairs[link] = set(str(eid) for eid in data[data["MentionIdentifier"] == link]["GlobalEventID"])
+	return event_link_pairs
+
 
 def add_mentions_props(params:dict, graph:graph=native_graph):
-    query = """UNWIND $rows AS row
-	MATCH (e:Event       {externalid: row.GlobalEventID})
-	MATCH (n:NewsArticle {url: row.MentionIdentifier})
-	MERGE (e)<-[r:MENTIONS]-(n)
-	ON CREATE SET
-    	r.mention_type = row.MentionType,
-    	r.confidence   = row.Confidence,
-    	r.doc_len      = row.MentionDocLen,
-    	r.sentence_id  = row.SentenceID,
-		r.inraw_text   = row.inraw_text
-	ON MATCH SET
-    	r.mention_type = row.MentionType,
-    	r.confidence   = row.Confidence,
-    	r.doc_len      = row.MentionDocLen,
-    	r.sentence_id  = row.SentenceID,
-		r.inraw_text   = row.inraw_text
-    """
-    response = graph.query(query, params=params)
-    return response
+	"""
+	Adds properties to the 'MENTIONS' relationship in batches
+	"""
+	query = """UNWIND $rows AS row
+		MATCH (e:Event       {externalid: row.GlobalEventID})
+		MATCH (n:NewsArticle {url: row.MentionIdentifier})
+		MERGE (e)<-[r:MENTIONS]-(n)
+		ON CREATE SET
+    		r.mention_type = row.MentionType,
+    		r.confidence   = row.Confidence,
+    		r.doc_len      = row.MentionDocLen,
+    		r.sentence_id  = row.SentenceID,
+			r.inraw_text   = row.inraw_text
+		ON MATCH SET
+    		r.mention_type = row.MentionType,
+    		r.confidence   = row.Confidence,
+    		r.doc_len      = row.MentionDocLen,
+    		r.sentence_id  = row.SentenceID,
+			r.inraw_text   = row.inraw_text
+    	"""
+	response = graph.query(query, params=params)
+	return response
 
 
 def add_mentions_properties(dir_path):
+	"""
+	Iterate over mentions files and add properties to respective 'MENTIONS' relation.
+	"""
 	total_mentions_instances = 0
 	mention_properties_added = 0
 	files = list(file for file in Path(dir_path).iterdir() if file.is_file())

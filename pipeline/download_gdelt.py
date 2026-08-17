@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-
-
 import io
 import sys
 import time
@@ -80,6 +77,7 @@ MENTION_COLS = [
 # ── HELPERS ────────────────────────────────────────────────────────────────────
 
 def fetch_master_list() -> list[str]:
+    """Fetch master list for getting the list of event and mentions file."""
     print("Fetching master file list (may take ~30 seconds)...")
     r = requests.get(MASTER_URL, timeout=120)
     r.raise_for_status()
@@ -140,9 +138,7 @@ def parse_events(csv_text: str) -> pd.DataFrame:
 
 
 def parse_mentions(csv_text: str) -> pd.DataFrame:
-    # Mentions are NOT filtered by event type here — the filtering
-    # already happened at the events level. During ingestion you join
-    # mentions to the events you kept, so extra rows are harmless.
+    """Parse Mentions file and return its dataframe"""
     return pd.read_csv(
         io.StringIO(csv_text), sep="\t", header=None,
         names=MENTION_COLS, dtype=str, low_memory=False,

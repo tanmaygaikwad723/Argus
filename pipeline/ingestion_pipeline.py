@@ -1,10 +1,7 @@
 import pandas as pd
-import numpy as np
-from falkordb import FalkorDB
-from datetime import date
 from pathlib import Path
 from urllib.parse import urlparse
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from db.connection import graph
 
 
@@ -113,7 +110,7 @@ def event_ingestion_pipeline(data:pd.DataFrame):
             continue
 
         ext_id = str(int(row["GlobalEventID"]))
-        evt_date = str(row["Day"])
+        evt_date = row["Day"]
         evt_year = int(row["Year"])
         news_url = str(row["SOURCEURL"])
         evt_num_mentions = int(row["NumMentions"])
@@ -144,7 +141,7 @@ def event_ingestion_pipeline(data:pd.DataFrame):
         params = {
             'ext_id': ext_id,
             'quad_class':quad_class,
-            'date':evt_date,
+            'date':evt_date.isoformat(),
             'evt_num_mentions':evt_num_mentions,
             'goldsteinscale': goldsteinscale,
             'isroot': isroot,
@@ -238,6 +235,7 @@ def events_data_ingestion_pipeline(dir_path:str):
     for file in tqdm(files, desc="Processing CSV files", leave=True, dynamic_ncols=True):
         try:
             data = pd.read_csv(file, encoding="utf-8", on_bad_lines="skip")
+            data["Day"] = pd.to_datetime(data["Day"].astype(str), format="%Y%m%d")
         except Exception as e:
             print(f"Error occured during reading file : {file}, error : {e}.")
             continue

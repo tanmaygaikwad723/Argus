@@ -1,7 +1,10 @@
 from langchain_groq import ChatGroq
 from langchain.agents import create_agent
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from agent.agent_tools import QueryByActorAndWordsTool, QueryByActorTool, QueryByLocationandWordsTool
+from agent.agent_tools import (QueryByActorAndWordsTool, 
+                               QueryByActorTool, 
+                               QueryByLocationandWordsTool,
+                               QueryByEventwordsTool,
+                               QueryByLocationTool)
 from langgraph.checkpoint.memory import InMemorySaver
 import os
 from dotenv import load_dotenv
@@ -11,7 +14,7 @@ load_dotenv()
 
 llm = ChatGroq(model="openai/gpt-oss-120b",
                 api_key=os.getenv("GROQ_API_KEY2"))
-tools = [QueryByActorTool(), QueryByActorAndWordsTool(), QueryByLocationandWordsTool()]
+tools = [QueryByActorTool(), QueryByActorAndWordsTool(), QueryByLocationandWordsTool(), QueryByEventwordsTool(), QueryByLocationTool()]
 
 
 prompt = "You are a helpful geopolitical analysis assistant that finds information about geopolitical events. \

@@ -1,10 +1,8 @@
 from db.connection import graph
 from typing import List, Optional, Callable
 from datetime import date
-from db.models import Event, Actor, NewsArticle, Publisher
 from db.connection import graph as native_graph
 from falkordb.graph import Graph
-from falkordb.query_result import QueryResult
 from functools import wraps
 from dataclasses import dataclass, field
 
@@ -62,7 +60,7 @@ def with_date_filter(func: Callable) -> Callable:
 
 
 @with_date_filter
-def query_by_actor(actor_name: str, graph:Graph=native_graph) -> QueryParts:
+def query_by_actor(actor_name: str) -> QueryParts:
     return QueryParts(
         match="MATCH (a:Actor)-[r:PARTICIPATED_IN]->(e:Event)",
         where=["toLower(a.name) CONTAINS $name", "e.summary IS NOT NULL"],
@@ -82,10 +80,12 @@ def query_by_actor(actor_name: str, graph:Graph=native_graph) -> QueryParts:
 
 
 @with_date_filter
-def query_by_actor_and_eventword(actor_names:List[str], event_words:List[str], graph:Graph=native_graph):
+def query_by_actor_and_eventword(actor_names:List[str], event_words:List[str], all:bool=True):
     return QueryParts(
         match = "MATCH (a:Actor)-[r:PARTICIPATED_IN]->(e:Event)",
-        where = ["ANY(name in $actors WHERE toLower(a.name) CONTAINS name)", "e.summary IS NOT NULL", "ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)"],
+        where = ["ANY(name in $actors WHERE toLower(a.name) CONTAINS name)",
+                 "e.summary IS NOT NULL",
+                 "ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)" if all else "ANY(word IN $words WHERE toLower(e.summary) CONTAIN word)"],
         return_clause = """ 
         OPTIONAL MATCH (e)<-[r2:MENTIONS]-(n:NewsArticle)
         OPTIONAL MATCH (n)<-[r3:PUBLISHED]-(p:Publisher)
@@ -102,10 +102,12 @@ def query_by_actor_and_eventword(actor_names:List[str], event_words:List[str], g
 
 
 @with_date_filter
-def query_by_event_and_location(event_words:List[str], location:str, graph:Graph=native_graph):
+def query_by_event_and_location(event_words:List[str], location:str, all:bool=True):
     return QueryParts(
         match = "MATCH (e:Event)-[r:OCCURED_AT]->(l:Location)",
-        where = ["ANY(word IN $words WHERE toLower(e.summary) CONTAINS word)", "e.summary IS NOT NULL", "toLower(l.name) CONTAINS $location"],
+        where = ["ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)" if all else "ANY(word IN $words WHERE toLower(e.summary) CONTAIN word)",
+                 "e.summary IS NOT NULL",
+                 "toLower(l.name) CONTAINS $location"],
         return_clause = """ 
         OPTIONAL MATCH (e)<-[r2:MENTIONS]-(n:NewsArticle)
         OPTIONAL MATCH (n)<-[r3:PUBLISHED]-(p:Publisher)
@@ -124,6 +126,42 @@ def query_by_event_and_location(event_words:List[str], location:str, graph:Graph
     )
 
 
+def query_by_event(event_words:List[str], all:bool = True) -> QueryParts:
+    return QueryParts(
+        match= "MATCH (e:Event)",
+        where= ["ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)" if all else "ANY(word IN $words WHERE toLower(e.summary) CONTAIN word)",
+                 "e.summary IS NOT NULL"],
+        return_clause= """ 
+        OPTIONAL MATCH (e)<-[r:PARTICIPATED_IN]-(a:Actor)
+        OPTIONAL MATCH (e)<-[r2:MENTIONS]-(n:NewsArticle)
+        RETURN flex.json.toJson({
+            event: CASE WHEN e IS NOT NULL THEN properties(e) ELSE {} END,
+            participated_rel: CASE WHEN r IS NOT NULL THEN properties(r) ELSE {} END,
+            actor: CASE WHEN a IS NOT NULL THEN properties(a) ELSE {} END,
+            mentions_rel: CASE WHEN r2 IS NOT NULL THEN properties(r2) ELSE {} END,
+            article: CASE WHEN n IS NOT NULL THEN properties(n) ELSE {} END
+        }) AS graph_context LIMIT 10
+        """,
+        params={"words": [word.lower() for word in event_words]}) 
 
 
-    
+@with_date_filter
+def query_by_location(location:str) -> QueryParts:
+    return QueryParts(
+        match = "MATCH (l:Location)<-[r:OCCURED_AT]-(e:Event)",
+        where = ["toLower(l.name) CONTAINS $location", "e.summary IS NOT NULL"],
+        return_clause = """ 
+        OPTIONAL MATCH (e)<-[r2:PARTICIPATED_IN]-(a:Actor)
+        OPTIONAL MATCH (e)<-[r3:MENTIONS]-(n:NewsArticle)
+        RETURN flex.json.toJson({
+        event: CASE WHEN e IS NOT NULL THEN properties(e) ELSE {} END,
+        participated_rel: CASE WHEN r2 IS NOT NULL THEN properties(r2) ELSE {} END,
+        actor: CASE WHEN a IS NOT NULL THEN properties(a) ELSE {} END,
+        occured_rel: CASE WHEN r IS NOT NULL THEN properties(r) ELSE {} END,
+        location: CASE WHEN l IS NOT NULL THEN properties(l) ELSE {} END,
+        mentions_rel: CASE WHEN r3 IS NOT NULL THEN properties(r3) ELSE {} END,
+        article: CASE WHEN n IS NOT NULL THEN properties(n) ELSE {} END
+        }) AS graph_context LIMIT 10
+    """ ,
+    params={"location": location}
+    )

@@ -85,7 +85,7 @@ def query_by_actor_and_eventword(actor_names:List[str], event_words:List[str], a
         match = "MATCH (a:Actor)-[r:PARTICIPATED_IN]->(e:Event)",
         where = ["ANY(name in $actors WHERE toLower(a.name) CONTAINS name)",
                  "e.summary IS NOT NULL",
-                 "ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)" if all else "ANY(word IN $words WHERE toLower(e.summary) CONTAIN word)"],
+                 "ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)" if all else "ANY(word IN $words WHERE toLower(e.summary) CONTAINS word)"],
         return_clause = """ 
         OPTIONAL MATCH (e)<-[r2:MENTIONS]-(n:NewsArticle)
         OPTIONAL MATCH (n)<-[r3:PUBLISHED]-(p:Publisher)
@@ -105,7 +105,7 @@ def query_by_actor_and_eventword(actor_names:List[str], event_words:List[str], a
 def query_by_event_and_location(event_words:List[str], location:str, all:bool=True):
     return QueryParts(
         match = "MATCH (e:Event)-[r:OCCURED_AT]->(l:Location)",
-        where = ["ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)" if all else "ANY(word IN $words WHERE toLower(e.summary) CONTAIN word)",
+        where = ["ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)" if all else "ANY(word IN $words WHERE toLower(e.summary) CONTAINS word)",
                  "e.summary IS NOT NULL",
                  "toLower(l.name) CONTAINS $location"],
         return_clause = """ 
@@ -125,11 +125,11 @@ def query_by_event_and_location(event_words:List[str], location:str, all:bool=Tr
         params = {"words":[w.lower() for w in event_words], "location": location.lower()}
     )
 
-
+@with_date_filter
 def query_by_event(event_words:List[str], all:bool = True) -> QueryParts:
     return QueryParts(
         match= "MATCH (e:Event)",
-        where= ["ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)" if all else "ANY(word IN $words WHERE toLower(e.summary) CONTAIN word)",
+        where= ["ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)" if all else "ANY(word IN $words WHERE toLower(e.summary) CONTAINS word)",
                  "e.summary IS NOT NULL"],
         return_clause= """ 
         OPTIONAL MATCH (e)<-[r:PARTICIPATED_IN]-(a:Actor)

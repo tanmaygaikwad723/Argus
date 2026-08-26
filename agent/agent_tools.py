@@ -70,7 +70,7 @@ class QueryByActorAndWordsTool(BaseTool):
     def _run(
             self,
             actor_names:List[str],
-            words: List[str],
+            event_words: List[str],
             occured_on: Optional[str] = None,
             occured_before: Optional[str] = None,
             occured_after: Optional[str] = None,
@@ -82,7 +82,7 @@ class QueryByActorAndWordsTool(BaseTool):
         after = safe_parse_date(occured_after)
         return query_by_actor_and_eventword(
                 actor_names,
-                words,
+                event_words,
                 all,
                 occured_on = on,
                 occured_before = before,

@@ -1,5 +1,6 @@
 from db.connection import graph
 from typing import List, Optional, Callable
+from falkordb.query_result import QueryResult
 from datetime import date
 from db.connection import graph as native_graph
 from falkordb.graph import Graph
@@ -80,7 +81,7 @@ def query_by_actor(actor_name: str) -> QueryParts:
 
 
 @with_date_filter
-def query_by_actor_and_eventword(actor_names:List[str], event_words:List[str], all:bool=True):
+def query_by_actor_and_eventword(actor_names:List[str], event_words:List[str], all:bool=False):
     return QueryParts(
         match = "MATCH (a:Actor)-[r:PARTICIPATED_IN]->(e:Event)",
         where = ["ANY(name in $actors WHERE toLower(a.name) CONTAINS name)",
@@ -102,7 +103,7 @@ def query_by_actor_and_eventword(actor_names:List[str], event_words:List[str], a
 
 
 @with_date_filter
-def query_by_event_and_location(event_words:List[str], location:str, all:bool=True):
+def query_by_event_and_location(event_words:List[str], location:str, all:bool=False):
     return QueryParts(
         match = "MATCH (e:Event)-[r:OCCURED_AT]->(l:Location)",
         where = ["ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)" if all else "ANY(word IN $words WHERE toLower(e.summary) CONTAINS word)",
@@ -126,7 +127,7 @@ def query_by_event_and_location(event_words:List[str], location:str, all:bool=Tr
     )
 
 @with_date_filter
-def query_by_event(event_words:List[str], all:bool = True) -> QueryParts:
+def query_by_event(event_words:List[str], all:bool = False) -> QueryParts:
     return QueryParts(
         match= "MATCH (e:Event)",
         where= ["ALL(word IN $words WHERE toLower(e.summary) CONTAINS word)" if all else "ANY(word IN $words WHERE toLower(e.summary) CONTAINS word)",
@@ -165,3 +166,65 @@ def query_by_location(location:str) -> QueryParts:
     """ ,
     params={"location": location}
     )
+
+
+def query_related_events(event_id: str, alpha: int = 1, include_intermediate_nodes: bool = False, graph: Graph = native_graph) -> QueryParts:
+    if alpha == 1 and not include_intermediate_nodes:
+        params = {"event_id": event_id}
+        query = """MATCH (e1:Event {externalid:$event_id})<-[r:RELATED_TO]-(e2:Event)
+                WHERE e1.summary IS NOT NULL AND e2.summary IS NOT NULL
+                OPTIONAL MATCH (e2)<-[r2:PARTICIPATED_IN]-(a:Actor)
+                OPTIONAL MATCH (e2)<-[r3:MENTIONS]-(n:NewsArticle)
+                RETURN flex.json.toJson({
+                related_rel: CASE WHEN r IS NOT NULL THEN properties(r) ELSE {} END,
+                event: CASE WHEN e2 IS NOT NULL THEN properties(e2) ELSE {} END,
+                participated_rel: CASE WHEN r2 IS NOT NULL THEN properties(r2) ELSE {} END,
+                actor: CASE WHEN a IS NOT NULL THEN properties(a) ELSE {} END,
+                mentions_rel: CASE WHEN r3 IS NOT NULL THEN properties(r3) ELSE {} END,
+                article: CASE WHEN n IS NOT NULL THEN properties(n) ELSE {} END
+                }) AS graph_context LIMIT 10"""
+        response = graph.query(query, params=params)
+        return response
+        
+    elif alpha > 1 and not include_intermediate_nodes:
+
+        params = {"event_id": event_id, "alpha": alpha}
+
+        query = """ MATCH (e1:Event {externalid: $event_id})<-[r:RELATED_TO*$alpha]-(e2:Event)
+                    WHERE e1.summary IS NOT NULL AND e2.summary IS NOT NULL
+                    OPTIONAL MATCH (e2)<-[r2:PARTICIPATED_IN]-(a:Actor)
+                    OPTIONAL MATCH (e2)<-[r3:MENTIONS]-(n:NewsArticle)
+                    RETURN flex.json.toJson({
+                    related_rel: CASE WHEN r IS NOT NULL THEN properties(r) ELSE {} END,
+                    event: CASE WHEN e2 IS NOT NULL THEN properties(e2) ELSE {} END,
+                    participated_rel: CASE WHEN r2 IS NOT NULL THEN properties(r2) ELSE {} END,
+                    actor: CASE WHEN a IS NOT NULL THEN properties(a) ELSE {} END,
+                    mentions_rel: CASE WHEN r3 IS NOT NULL THEN properties(r3) ELSE {} END,
+                    article: CASE WHEN n IS NOT NULL THEN properties(n) ELSE {} END
+                    }) AS graph_context LIMIT 10"""
+
+        response = graph.query(query, params = params)
+        return response
+    elif alpha > 1 and include_intermediate_nodes:
+
+        params = {"event_id": event_id, "alpha": alpha}
+
+        query = """MATCH path = (e1:Event {externalid: $event_id})<-[r:RELATED_TO*1..$alpha]-(e2:Event)
+                WHERE e1.summary IS NOT NULL AND e2.summary IS NOT NULL AND ALL(node IN nodes(path) WHERE node.summary IS NOT NULL)
+                UNWIND nodes(path) AS node
+                OPTIONAL MATCH (node)<-[r2:PARTICIPATED_IN]-(a:Actor)
+                OPTIONAL MATCH (node)<-[r3:MENTIONS]-(n:NewsArticle)
+                RETURN collect({
+                related_rel: CASE WHEN r IS NOT NULL THEN properties(r) ELSE {} END,
+                event: CASE WHEN e2 IS NOT NULL THEN properties(e2) ELSE {} END,
+                participated_rel: CASE WHEN r2 IS NOT NULL THEN properties(r2) ELSE {} END,
+                actor: CASE WHEN a IS NOT NULL THEN properties(a) ELSE {} END,
+                mentions_rel: CASE WHEN r3 IS NOT NULL THEN properties(r3) ELSE {} END,
+                article: CASE WHEN n IS NOT NULL THEN properties(n) ELSE {} END
+                }) AS graph_context LIMIT 5"""
+        response = graph.query(query, params=params)
+        return response
+    else:
+        temp_query = QueryResult()
+        temp_query.result_set = ["Please check the arguments passed to the tool."]
+        return temp_query

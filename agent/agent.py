@@ -1,10 +1,15 @@
 from langchain_groq import ChatGroq
+# from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain.agents import create_agent
+from json_repair import repair_json
+import json
+from groq import BadRequestError
 from agent.agent_tools import (QueryByActorAndWordsTool, 
                                QueryByActorTool, 
                                QueryByLocationandWordsTool,
                                QueryByEventwordsTool,
-                               QueryByLocationTool)
+                               QueryByLocationTool,
+                               QueryRelatedEventsTool)
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.base import RunnableSerializable
@@ -14,33 +19,28 @@ from langchain_core.messages import ToolMessage, HumanMessage, AIMessage, BaseMe
 import os
 from dotenv import load_dotenv
 
+load_dotenv()
+
 os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
 os.environ["LANGCHAIN_PROJECT"] = "Argus"
 
-load_dotenv()
 
 llm = ChatGroq(model="openai/gpt-oss-120b",
                 api_key=os.getenv("GROQ_API_KEY2"),
                 temperature=0.0)
 
-tools = [QueryByActorTool(), QueryByActorAndWordsTool(), QueryByLocationandWordsTool(), QueryByEventwordsTool(), QueryByLocationTool()]
 
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", (
         """ 
-        You are a helpful geopolitical analysis assistant that finds information about geopolitical events. 
-        Analyze the question asked by user, then extract appropriate words and entities that can be used by tools provided.
-        If you need clarity on anything then ask user, Do only the things user specifically requested. 
-        If a tool outputs multiple options, ask user to select one or more of them in follow up question. 
-        You must ALWAYS respond using a tool call — never respond with plain text.
-        When you have gathered enough information to answer the user's question,
-        you MUST call the final_answer tool with your complete answer as the argument.
-        Do not write your final answer as plain response content. 
-        Do not call the same tool more than once with similar arguments 
-        unless the previous result returned zero matches and a meaningfully different search is warranted.
+        You are a helpful Geopolitical analyst, answer the questions the user asks.
+        Do multi-step reasoning for answering questions the user asked. Do not call same tool twice with same arguments.
+        If you have all the information for answering question, then call 'final_answer' tool after forming a final answer.
+        The final answer should be formed only from the context retrieved using tools. If you can't answer a question of user just
+        say 'I dont know'. 
         """
     )),
     MessagesPlaceholder(variable_name="chat_history"),
@@ -59,16 +59,45 @@ def final_answer(answer:str, tools_used:List[str]) -> str:
     return {"answer": answer, "tool_used": tools_used}
 
 
+def _recover_from_tool_use_failure(error: BadRequestError) -> dict | None:
+    """ 
+    Genralized recovery for any Groq  tool_use_failed error -
+    covers wrong-tool-name, malformed JSON, and truncated JSON cases
+    """
+    try:
+        body = error.body if hasattr(error, "body") else json.loads(error.response.text)
+        if body.get("error", {}).get("code") != "tool_use_failed":
+            return None
+
+        failed_gen = body["error"].get("failed_generation", "")
+        if not failed_gen:
+            return None
+
+        repaired = repair_json(failed_gen)
+        parsed = json.loads(repaired)
+
+        return parsed.get("arguments", parsed)
+    except Exception as inner_e:
+        print(f"Recovery attempt also failed: {inner_e}")
+        return None
+
+
 class CustomAutonomousAgent:
     """A custom autonomous agent that handles ReAct loop."""
 
     chat_history: List[BaseMessage]
 
-    def __init__(self, max_iter: int = 5):
+    def __init__(self, max_iter: int = 10):
         self.chat_history = []
         self.max_iter = max_iter
 
-        self.tools = [QueryByActorTool(), QueryByActorAndWordsTool(), QueryByLocationandWordsTool(), QueryByEventwordsTool(), QueryByLocationTool(), final_answer]
+        self.tools = [QueryByActorTool(), 
+                      QueryByActorAndWordsTool(), 
+                      QueryByLocationandWordsTool(), 
+                      QueryByEventwordsTool(), 
+                      QueryByLocationTool(),
+                      QueryRelatedEventsTool(), 
+                      final_answer]
         self.name2tool = {tool.name: tool.invoke for tool in self.tools}
 
         self.agent: RunnableSerializable = (
@@ -78,7 +107,7 @@ class CustomAutonomousAgent:
                 "agent_scratchpad": lambda x: x.get("agent_scratchpad", [])
             }
             | prompt
-            | llm.bind_tools(self.tools, tool_choice="required")
+            | llm.bind_tools(self.tools, tool_choice="auto")
         )
 
     def invoke(self, input:str) -> dict:
@@ -88,12 +117,26 @@ class CustomAutonomousAgent:
         tools_used = []
 
         while count < self.max_iter:
-            # print(f"agent_scratchpad: {agent_scratchpad} \n\n")
-            agent_resp = self.agent.invoke({
-                "input": input,
-                "chat_history": self.chat_history,
-                "agent_scratchpad": agent_scratchpad
-            })
+            print(f"agent_scratchpad: {agent_scratchpad} \n\n")
+
+            try:
+                agent_resp = self.agent.invoke({
+                    "input": input,
+                    "chat_history": self.chat_history,
+                    "agent_scratchpad": agent_scratchpad
+                })
+
+            except BadRequestError as e:
+                recovered = _recover_from_tool_use_failure(e)
+                if recovered and "answer" in recovered:
+                    print("Recovered from malformed/truncated tool call.")
+                    final_answer_text = recovered["answer"]
+                    self.chat_history.extend([
+                        HumanMessage(content=input),
+                        AIMessage(content=final_answer_text)
+                    ])
+                    return {"answer": final_answer_text, "tools_used": tools_used, "recovered_from_erro": True}
+                raise
 
             if len(agent_resp.tool_calls) > 0:
                 agent_scratchpad.append(agent_resp)
@@ -112,7 +155,7 @@ class CustomAutonomousAgent:
 
                 agent_scratchpad.append(tool_exec)
 
-                print(f"{count}: {tool_name}({tool_args}) -> {tool_out}")
+                # print(f"{count}: {tool_name}({tool_args}) -> {tool_out}")
 
                 count += 1
 
@@ -137,8 +180,12 @@ class CustomAutonomousAgent:
 
 autonomous_agent = CustomAutonomousAgent()
 
-result = autonomous_agent.invoke("Tell me about the recent attacks that happened in pakistan")
-print(result)
+agent_input = "Hey, there tell me about yourself!"
+
+while agent_input != "quit" or "exit":
+    result = autonomous_agent.invoke(agent_input)
+    print(result)
+    agent_input = str(input("Ask me about recent geopolitical events : "))
         
 
 

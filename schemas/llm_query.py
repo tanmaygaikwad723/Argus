@@ -51,3 +51,9 @@ class QueryByEventwords(DateFilterMixin,EventWordsFilterMixin):
 
 class QueryByLocation(DateFilterMixin):
     location: str = Field(description="The name of the location where the event has occured")
+
+
+class QueryRelatedEvents(BaseModel):
+    event_id: int = Field(description="The 'externalid' of the event whose related events are needed to be queried")
+    alpha: int = Field(default=1, description="Return's events that are 'n' hops away related to given event's id.")
+    include_intermediate_nodes: bool = Field(default=False, description="Whether intermediate nodes of a multi-hop query should be returned in result.")

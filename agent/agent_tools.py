@@ -3,13 +3,15 @@ from schemas.llm_query import (QueryByActor,
                                QueryByActorNameandWords, 
                                QueryByLocationandwords, 
                                QueryByEventwords,
-                               QueryByLocation)
+                               QueryByLocation,
+                               QueryRelatedEvents)
 from pydantic import BaseModel
 from agent.semantic_layer import (query_by_actor, 
                                   query_by_actor_and_eventword, 
                                   query_by_event_and_location,
                                   query_by_event,
-                                  query_by_location)
+                                  query_by_location,
+                                  query_related_events)
 from typing import Type, List, Optional
 from datetime import date as date_type, datetime
 
@@ -106,7 +108,7 @@ class QueryByLocationandWordsTool(BaseTool):
             occured_on: Optional[str] = None,
             occured_before: Optional[str] = None,
             occured_after: Optional[str] = None,
-            all: Optional[bool] = True
+            all: Optional[bool] = False
     ) -> List[dict]:
         """Using the tool"""
         on = safe_parse_date(occured_on)
@@ -174,6 +176,25 @@ class QueryByLocationTool(BaseTool):
             occured_after = after,
             occured_before = before,
             occured_on = on
+        ).result_set
+
+
+class QueryRelatedEventsTool(BaseTool):
+    name: str = "Query_related_events_tool"
+    description: str = (
+        "Use this tool when you have to find events that are related to a specific event."
+    )
+    args_schema: Type[BaseModel] = QueryRelatedEvents
+
+    def _run(self,
+             event_id: int,
+             alpha: int = 1,
+             include_intermediate_nodes: bool = False) -> List[dict]:
+        """Using the tool"""
+        return query_related_events(
+            str(event_id),
+            alpha=alpha,
+            include_intermediate_nodes=include_intermediate_nodes
         ).result_set
     
 

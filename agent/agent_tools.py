@@ -4,14 +4,16 @@ from schemas.llm_query import (QueryByActor,
                                QueryByLocationandwords, 
                                QueryByEventwords,
                                QueryByLocation,
-                               QueryRelatedEvents)
+                               QueryRelatedEvents,
+                               QueryRelatedEventswithWords)
 from pydantic import BaseModel
 from agent.semantic_layer import (query_by_actor, 
                                   query_by_actor_and_eventword, 
                                   query_by_event_and_location,
                                   query_by_event,
                                   query_by_location,
-                                  query_related_events)
+                                  query_related_events,
+                                  query_related_events_with_words)
 from typing import Type, List, Optional
 from datetime import date as date_type, datetime
 
@@ -195,6 +197,31 @@ class QueryRelatedEventsTool(BaseTool):
             str(event_id),
             alpha=alpha,
             include_intermediate_nodes=include_intermediate_nodes
+        ).result_set
+
+
+class QueryRelatedEventswithWordsTool(BaseTool):
+    name: str = "Query_related_events_with_words_tool"
+    description: str = (
+        "Use this tool when you want to find events that are related to a specific event"
+        " along with some context of what the related events are about"
+    )
+
+    args_schema: Type[BaseModel] = QueryRelatedEventswithWords
+
+    def _run(self,
+             event_words: List[str],
+             event_id: int,
+             alpha: int = 1,
+             all : bool = False,
+             include_intermediate_nodes: bool = False) -> List[dict]:
+        """ Using the tool"""
+        return query_related_events_with_words(
+            event_words = event_words,
+            event_id = str(event_id),
+            alpha = alpha,
+            all = all,
+            include_intermediate_nodes = include_intermediate_nodes
         ).result_set
     
 

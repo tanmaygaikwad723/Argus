@@ -29,7 +29,7 @@ class DateFilterMixin(BaseModel):
 
 class EventWordsFilterMixin(BaseModel):
     event_words: List[str] = Field("The word or specific phrases that are related to the event.")
-    all: Optional[bool] = Field(default=True, description="Boolean field that indicates whether the event summary should " \
+    all: Optional[bool] = Field(default=False, description="Boolean field that indicates whether the event summary should " \
                                                 "contain all the event words of the list or any one of them.")
 
 
@@ -55,5 +55,11 @@ class QueryByLocation(DateFilterMixin):
 
 class QueryRelatedEvents(BaseModel):
     event_id: int = Field(description="The 'externalid' of the event whose related events are needed to be queried")
-    alpha: int = Field(default=1, description="Return's events that are 'n' hops away related to given event's id.")
-    include_intermediate_nodes: bool = Field(default=False, description="Whether intermediate nodes of a multi-hop query should be returned in result.")
+    alpha: Optional[int] = Field(default=1, description="Return's events that are 'n' hops away related to given event's id.")
+    include_intermediate_nodes: Optional[bool] = Field(default=False, description="Whether intermediate nodes of a multi-hop query should be returned in result.")
+
+
+class QueryRelatedEventswithWords(EventWordsFilterMixin):
+    event_id: int = Field("The 'externalid' of the event whose related events are needed to be queried")
+    alpha: Optional[int] = Field(default=1, description="The number of hops used to search for related events.")
+    include_intermediate_nodes: Optional[bool] = Field(default=False, description="Whether intermediate nodes of a multi-hop query should be returned in result.")

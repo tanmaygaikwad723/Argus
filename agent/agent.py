@@ -9,7 +9,8 @@ from agent.agent_tools import (QueryByActorAndWordsTool,
                                QueryByLocationandWordsTool,
                                QueryByEventwordsTool,
                                QueryByLocationTool,
-                               QueryRelatedEventsTool)
+                               QueryRelatedEventsTool,
+                               QueryRelatedEventswithWordsTool)
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.base import RunnableSerializable
@@ -96,7 +97,8 @@ class CustomAutonomousAgent:
                       QueryByLocationandWordsTool(), 
                       QueryByEventwordsTool(), 
                       QueryByLocationTool(),
-                      QueryRelatedEventsTool(), 
+                      QueryRelatedEventsTool(),
+                      QueryRelatedEventswithWordsTool(), 
                       final_answer]
         self.name2tool = {tool.name: tool.invoke for tool in self.tools}
 

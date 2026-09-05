@@ -1,5 +1,3 @@
-from langchain_groq import ChatGroq
-# from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain.agents import create_agent
 from json_repair import repair_json
 import json
@@ -14,8 +12,10 @@ from agent.agent_tools import (QueryByActorAndWordsTool,
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.base import RunnableSerializable
-from typing import List
+from typing import Any, Iterator, List
+from pydantic import BaseModel, Field
 from langchain_core.tools import tool
+from langchain.agents.middleware.model_retry import ModelRetryMiddleware
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage, BaseMessage
 import os
 from dotenv import load_dotenv
@@ -28,26 +28,13 @@ os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
 os.environ["LANGCHAIN_PROJECT"] = "Argus"
 
 
-llm = ChatGroq(model="openai/gpt-oss-120b",
-                api_key=os.getenv("GROQ_API_KEY2"),
-                temperature=0.0)
-
-
-
-prompt = ChatPromptTemplate.from_messages([
-    ("system", (
-        """ 
+prompt = """ 
         You are a helpful Geopolitical analyst, answer the questions the user asks.
         Do multi-step reasoning for answering questions the user asked. Do not call same tool twice with same arguments.
         If you have all the information for answering question, then call 'final_answer' tool after forming a final answer.
         The final answer should be formed only from the context retrieved using tools. If you can't answer a question of user just
         say 'I dont know'. 
         """
-    )),
-    MessagesPlaceholder(variable_name="chat_history"),
-    ("human", "{input}"),
-    MessagesPlaceholder(variable_name="agent_scratchpad")
-])
 
 @tool
 def final_answer(answer:str, tools_used:List[str]) -> str:
@@ -83,150 +70,155 @@ def _recover_from_tool_use_failure(error: BadRequestError) -> dict | None:
         return None
 
 
-class CustomAutonomousAgent:
-    """A custom autonomous agent that handles ReAct loop."""
-
-    chat_history: List[BaseMessage]
-
-    def __init__(self, max_iter: int = 10):
-        self.chat_history = []
-        self.max_iter = max_iter
-
-        self.tools = [QueryByActorTool(), 
-                      QueryByActorAndWordsTool(), 
-                      QueryByLocationandWordsTool(), 
-                      QueryByEventwordsTool(), 
-                      QueryByLocationTool(),
-                      QueryRelatedEventsTool(),
-                      QueryRelatedEventswithWordsTool(), 
-                      final_answer]
-        self.name2tool = {tool.name: tool.invoke for tool in self.tools}
-
-        self.agent: RunnableSerializable = (
-            {
-                "input": lambda x: x["input"],
-                "chat_history": lambda x: x["chat_history"],
-                "agent_scratchpad": lambda x: x.get("agent_scratchpad", [])
-            }
-            | prompt
-            | llm.bind_tools(self.tools, tool_choice="auto")
-        )
-
-    def invoke(self, input:str) -> dict:
-        """Execute the agent loop"""
-        count = 0
-        agent_scratchpad = []
-        tools_used = []
-
-        while count < self.max_iter:
-            print(f"agent_scratchpad: {agent_scratchpad} \n\n")
-
-            try:
-                agent_resp = self.agent.invoke({
-                    "input": input,
-                    "chat_history": self.chat_history,
-                    "agent_scratchpad": agent_scratchpad
-                })
-
-            except BadRequestError as e:
-                recovered = _recover_from_tool_use_failure(e)
-                if recovered and "answer" in recovered:
-                    print("Recovered from malformed/truncated tool call.")
-                    final_answer_text = recovered["answer"]
-                    self.chat_history.extend([
-                        HumanMessage(content=input),
-                        AIMessage(content=final_answer_text)
-                    ])
-                    return {"answer": final_answer_text, "tools_used": tools_used, "recovered_from_erro": True}
-                raise
-
-            if len(agent_resp.tool_calls) > 0:
-                agent_scratchpad.append(agent_resp)
-                tool_name = agent_resp.tool_calls[0]["name"]
-                tool_args = agent_resp.tool_calls[0]["args"]
-                tool_call_id = agent_resp.tool_calls[0]["id"]
-
-                if tool_name != "final_answer":
-                    tools_used.append(tool_name)
-
-                tool_out = self.name2tool[tool_name](tool_args)
-
-                tool_exec = ToolMessage(
-                    content = f"{tool_out}", tool_call_id=tool_call_id
-                )
-
-                agent_scratchpad.append(tool_exec)
-
-                # print(f"{count}: {tool_name}({tool_args}) -> {tool_out}")
-
-                count += 1
-
-                if tool_name == "final_answer":
-                    final_answer_text = tool_out["answer"] if isinstance(tool_out, dict) else str(tool_out)
-                # print(final_answer_text)
-                    self.chat_history.extend([
-                        HumanMessage(content=input),
-                        AIMessage(content=str(final_answer_text))
-                    ])
-                    return tool_out
-
-            else:
-                final_answer_text = agent_resp.content or agent_resp.additional_kwargs.get("reasoning_content", "")  
-                self.chat_history.extend([
-                    HumanMessage(content=input),
-                    AIMessage(content=final_answer_text)
-                ])
-                return {"answer": final_answer_text}
-        return {"answer": "Reached max iterations wihtout final answer."}
+class FinalAnswer(BaseModel):
+    """The agent's final answer to the user's geopolitical question."""
+    answer: str = Field(description="The natural-language answer, based only on retrieved context.")
 
 
-autonomous_agent = CustomAutonomousAgent()
+def create_autonomous_agent():
+    from langchain_openai import ChatOpenAI
 
-agent_input = "Hey, there tell me about yourself!"
+    llm = ChatOpenAI(model="nvidia/nemotron-3-ultra-550b-a55b:free",
+                     api_key=os.environ.get("OPENROUTER_API_KEY"),
+                     openai_api_base="https://openrouter.ai/api/v1",
+                     temperature=0.0)
 
-while agent_input != "quit" or "exit":
-    result = autonomous_agent.invoke(agent_input)
-    print(result)
-    agent_input = str(input("Ask me about recent geopolitical events : "))
-        
+    return create_agent(
+        model = llm,
+        tools = [
+            QueryByActorAndWordsTool(),
+            QueryByActorTool(),
+            QueryByEventwordsTool(),
+            QueryByLocationandWordsTool(),
+            QueryByLocationTool(),
+            QueryRelatedEventsTool(),
+            QueryRelatedEventswithWordsTool(),
+            final_answer
+        ],
+        system_prompt = prompt,
+        middleware = [
+            ModelRetryMiddleware(
+                max_retries = 3,
+                retry_on = (BadRequestError,),
+                on_failure = "continue"
+            )
+        ],
+        checkpointer = InMemorySaver()
+    )
 
 
-# if __name__ == "__main__":
-#     for t in tools:
-#         print(repr(t.name), "→ valid:", t.name.replace("_", "").replace("-", "").isalnum())
-#     message_input = ""
-#     config = {"configurable": {"thread_id": "session_1"}}
-#     while message_input != "quit":
-#         message_input = input(str("Ask question what is the situation of war between Iran and US or type 'quit' to exit from loop : "))
-#         try:
-#             for event in agent.stream(config=config, input={"messages": [{"role": "user", "content": message_input}]}):
-#                 if "model" in event:
-#                     messages = event["model"]["messages"]
-#                     for msg in messages:
-#                         if hasattr(msg, "additional_kwargs") and "reasoning_content" in msg.additional_kwargs:
-#                             reasoning = msg.additional_kwargs["reasoning_content"]
-#                             if reasoning:
-#                                 print(f"\n🤔 [Thinking]: {reasoning}\n")
-                        
-#                         if hasattr(msg, "content") and len(msg.content) > 1:
-#                             print(f"\n[AI] : {msg.content} ")
+def _message_content(message: BaseMessage) -> str:
+    """Return displayable text from a LangChain message content value."""
+    content = message.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("text"):
+                parts.append(str(block["text"]))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "".join(parts)
+    return str(content)
 
-#                         if msg.tool_calls:
-#                             for tool in msg.tool_calls:
-#                                 print(f"🔍 [Tool Call]: Running '{tool['name']}' with query: {tool['args'].get('query')}")
 
-#                 elif "tools" in event:
-#                     messages = event["tools"]["messages"]
-#                     for msg in messages:
-#                         print(f"✅ [Tool Complete]: Retrieved context from database.")
-#                         print(f"📄 [Context Sample]: {msg.content[:200]}...")
+def _tool_result_content(message: ToolMessage) -> Any:
+    """Decode structured tool output while preserving non-JSON results."""
+    content = message.content
+    if isinstance(content, (dict, list)):
+        return content
+    if isinstance(content, str):
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            return content
+    return str(content)
 
-#                 elif "assistant" in event or "agent" in event:
-#                     node_name = "assistant" if "assistant" in event else "agent"
-#                     messages = event[node_name]["messages"]
-#                     for msg in messages:
-#                         if msg.content:
-#                             print(f"\n🤖 [Assistant]: {msg.content}")
-#         except Exception as e:
-#             print(f"Exception occured : {e}")
+
+def stream_agent_response(
+    agent: Any,
+    message_input: str,
+    config: dict,
+) -> Iterator[dict[str, Any]]:
+    """Yield structured intermediate steps and the final answer from an agent run."""
+    for update in agent.stream(
+        config=config,
+        input={"messages": [{"role": "user", "content": message_input}]},
+        stream_mode="updates",
+    ):
+        for node_name, node_update in update.items():
+            messages = node_update.get("messages", [])
+            if not messages:
+                yield {"type": "update", "node": node_name, "data": node_update}
+                continue
+
+            for message in messages:
+                if isinstance(message, AIMessage) and message.tool_calls:
+                    for tool_call in message.tool_calls:
+                        yield {
+                            "type": "tool_call",
+                            "node": node_name,
+                            "name": tool_call["name"],
+                            "args": tool_call.get("args", {}),
+                        }
+                elif isinstance(message, ToolMessage):
+                    result = _tool_result_content(message)
+                    if message.name == "final_answer":
+                        answer = result.get("answer", result) if isinstance(result, dict) else result
+                        yield {
+                            "type": "final",
+                            "node": node_name,
+                            "answer": answer,
+                            "tool_used": result.get("tool_used", []) if isinstance(result, dict) else [],
+                        }
+                    else:
+                        yield {
+                            "type": "tool_result",
+                            "node": node_name,
+                            "name": message.name or message.tool_call_id,
+                            "result": result,
+                        }
+                elif isinstance(message, AIMessage) and message.content:
+                    yield {
+                        "type": "assistant",
+                        "node": node_name,
+                        "content": _message_content(message),
+                    }
+
+
+def _print_stream_event(event: dict[str, Any]) -> None:
+    """Render one streamed event for the command-line client."""
+    event_type = event["type"]
+    if event_type == "tool_call":
+        print(f"\n[step] Calling {event['name']} with {event['args']}")
+    elif event_type == "tool_result":
+        result = event["result"]
+        print(f"[step] {event['name']} returned {len(result)} result(s)" if isinstance(result, list) else f"[step] {event['name']} returned")
+    elif event_type == "assistant":
+        print(f"\n{event['content']}")
+    elif event_type == "final":
+        print(f"\nAnswer:\n{event['answer']}")
+
+
+if __name__ == "__main__":
+    agent = create_autonomous_agent()
+    config = {"configurable": {"thread_id": "session_1"}}
+    while True:
+        message_input = input(
+            "Ask a question, or type 'quit' or 'exit' to stop: "
+        ).strip()
+        if message_input.lower() in {"quit", "exit"}:
+            break
+        if not message_input:
+            continue
+
+        try:
+            for event in stream_agent_response(agent, message_input, config):
+                _print_stream_event(event)
+        except KeyboardInterrupt:
+            print("\nRequest cancelled.")
+        except Exception as error:
+            print(f"\nAgent run failed: {error}")
+
 
